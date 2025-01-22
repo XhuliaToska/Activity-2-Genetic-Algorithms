@@ -1,5 +1,6 @@
 import random
 import numpy as np
+import matplotlib.pyplot as plt
 from typing import List, Tuple
 
 # Define parameters
@@ -103,6 +104,7 @@ def genetic_algorithm():
     best_solution = None
     best_fitness = float('inf')
     stagnation_counter = 0  # To track stationary state
+    fitness_history = []
     
     for generation in range(GENERATIONS):
         fitness = [evaluate(chrom) for chrom in population]
@@ -136,11 +138,18 @@ def genetic_algorithm():
         else:
             stagnation_counter += 1
         
+        fitness_history.append(best_fitness)
         print(f'Generation {generation}: Best Makespan = {best_fitness}')
         
         if stagnation_counter > 50:  # Stop if no improvement for 50 generations
             print("Stopping early due to stagnation.")
             break
+    
+    plt.plot(fitness_history)
+    plt.xlabel('Generation')
+    plt.ylabel('Best Makespan')
+    plt.title('Evolution of Best Makespan Over Generations')
+    plt.show()
     
     return best_solution, best_fitness
 
