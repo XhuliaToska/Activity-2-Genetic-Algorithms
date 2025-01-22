@@ -4,12 +4,12 @@ import matplotlib.pyplot as plt
 from typing import List, Tuple
 
 # Define parameters
-POPULATION_SIZE = 100  # Chosen based on problem complexity and balance between diversity and computational cost
-MUTATION_RATE = 0.1
+POPULATION_SIZE = 500  # Chosen based on problem complexity and balance between diversity and computational cost
+BASE_MUTATION_RATE = 0.3
 CROSSOVER_RATE = 0.8
 GENERATIONS = 500
 ELITISM = True
-TOURNAMENT_SIZE = 5
+TOURNAMENT_SIZE = 3
 
 # Example Job Shop Problem (each job has a sequence of (machine, processing time))
 JOBS = [
@@ -35,13 +35,17 @@ def create_chromosome() -> List[Tuple[int, int]]:
 
 # --- FITNESS FUNCTION ---
 def evaluate(chromosome: List[Tuple[int, int]]) -> int:
-    """Computes the makespan (total completion time) of the schedule."""
     machine_times = [0] * NUM_MACHINES
     job_times = [0] * NUM_JOBS
     
     for job_id, op_id in chromosome:
         machine, duration = JOBS[job_id][op_id]
-        start_time = max(machine_times[machine], job_times[job_id])
+        
+        if op_id == 0:
+            start_time = machine_times[machine]  
+        else:
+            start_time = max(machine_times[machine], job_times[job_id])
+        
         end_time = start_time + duration
         machine_times[machine] = end_time
         job_times[job_id] = end_time
@@ -50,52 +54,74 @@ def evaluate(chromosome: List[Tuple[int, int]]) -> int:
 
 # --- SELECTION METHODS ---
 def tournament_selection(population: List[List[Tuple[int, int]]], fitness: List[int]) -> List[Tuple[int, int]]:
-    """Selects a parent using tournament selection."""
     tournament = random.sample(list(zip(population, fitness)), TOURNAMENT_SIZE)
-    return min(tournament, key=lambda x: x[1])[0]  # Return chromosome with best fitness
+    return min(tournament, key=lambda x: x[1])[0]  
 
-def roulette_wheel_selection(population: List[List[Tuple[int, int]]], fitness: List[int]) -> List[Tuple[int, int]]:
-    """Roulette wheel selection proportional to fitness (inverse of makespan)."""
+def stochastic_universal_sampling(population: List[List[Tuple[int, int]]], fitness: List[int]) -> List[Tuple[int, int]]:
     total_fitness = sum(1 / f for f in fitness)
-    pick = random.uniform(0, total_fitness)
-    current = 0
-    for chromo, fit in zip(population, fitness):
-        current += 1 / fit
-        if current > pick:
-            return chromo
-    return population[-1]  # In case of rounding errors
+    step_size = total_fitness / TOURNAMENT_SIZE
+    start_point = random.uniform(0, step_size)
+    pointers = [start_point + i * step_size for i in range(TOURNAMENT_SIZE)]
+    selected = []
+    
+    current_fitness_sum = 0
+    index = 0
+    for ptr in pointers:
+        while current_fitness_sum < ptr:
+            current_fitness_sum += 1 / fitness[index]
+            index += 1
+        selected.append(population[index - 1])
+    return random.choice(selected)  
 
 # --- CROSSOVER METHODS ---
-def ordered_crossover(parent1: List[Tuple[int, int]], parent2: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    """Implements ordered crossover (OX) for permutation-based chromosomes."""
+def edge_recombination_crossover(parent1: List[Tuple[int, int]], parent2: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
     size = len(parent1)
-    start, end = sorted(random.sample(range(size), 2))
-    child = [None] * size
-    child[start:end] = parent1[start:end]
-    remaining = [gene for gene in parent2 if gene not in child]
-    i, j = 0, 0
-    while i < size:
-        if child[i] is None:
-            child[i] = remaining[j]
-            j += 1
-        i += 1
+    adjacency_list = {gene: set() for gene in set(parent1 + parent2)}
+
+    for p in [parent1, parent2]:
+        for i in range(len(p) - 1):
+            adjacency_list[p[i]].add(p[i + 1])
+            adjacency_list[p[i + 1]].add(p[i])
+    child = []
+    current = random.choice(parent1)
+    while len(child) < size:
+        child.append(current)
+        for key in adjacency_list:
+            adjacency_list[key].discard(current)
+        if adjacency_list[current]:
+            current = min(adjacency_list[current], key=lambda k: len(adjacency_list[k]))
+        else:
+            remaining = [g for g in parent1 if g not in child]
+            if remaining:
+                current = random.choice(remaining)
+            else:
+                break  
+
     return child
 
 def uniform_crossover(parent1: List[Tuple[int, int]], parent2: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    """Uniform crossover where each gene is chosen randomly from either parent."""
     return [random.choice(gene_pair) for gene_pair in zip(parent1, parent2)]
 
 # --- MUTATION METHODS ---
 def swap_mutation(chromosome: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    """Swaps two randomly selected positions."""
+    if len(chromosome) < 2:
+        return chromosome  
+    chromosome = chromosome[:] 
+    a, b = random.sample(range(len(chromosome)), 2)
+    chromosome[a], chromosome[b] = chromosome[b], chromosome[a]
+    return chromosome  
     a, b = random.sample(range(len(chromosome)), 2)
     chromosome[a], chromosome[b] = chromosome[b], chromosome[a]
     return chromosome
 
-def inversion_mutation(chromosome: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    """Reverses a random subsequence."""
-    start, end = sorted(random.sample(range(len(chromosome)), 2))
-    chromosome[start:end] = reversed(chromosome[start:end])
+def insertion_mutation(chromosome: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    if len(chromosome) < 2:
+        return chromosome
+    chromosome = chromosome[:]  # Avoid modifying in place
+    index = random.randint(0, len(chromosome) - 1)
+    gene = chromosome.pop(index)
+    insert_pos = random.randint(0, len(chromosome))
+    chromosome.insert(insert_pos, gene)
     return chromosome
 
 # --- EVOLUTIONARY PROCESS ---
@@ -103,29 +129,30 @@ def genetic_algorithm():
     population = [create_chromosome() for _ in range(POPULATION_SIZE)]
     best_solution = None
     best_fitness = float('inf')
-    stagnation_counter = 0  # To track stationary state
-    fitness_history = []
+    stagnation_counter = 0  
     
     for generation in range(GENERATIONS):
         fitness = [evaluate(chrom) for chrom in population]
         sorted_population = [ch for _, ch in sorted(zip(fitness, population))]
         
         if ELITISM:
-            new_population = [sorted_population[0]]  # Preserve the best solution
+            new_population = [sorted_population[0]]  
         else:
             new_population = []
         
         while len(new_population) < POPULATION_SIZE:
             parent1 = tournament_selection(population, fitness)
-            parent2 = roulette_wheel_selection(population, fitness)
+            parent2 = stochastic_universal_sampling(population, fitness)
             
+            crossover_method = edge_recombination_crossover if generation % 2 == 0 else uniform_crossover
             if random.random() < CROSSOVER_RATE:
-                child = ordered_crossover(parent1, parent2)
+                child = crossover_method(parent1, parent2)
             else:
                 child = parent1[:]
             
-            if random.random() < MUTATION_RATE:
-                child = swap_mutation(child) if random.random() < 0.5 else inversion_mutation(child)
+            mutation_rate = BASE_MUTATION_RATE + (0.2 if stagnation_counter > 20 else 0)
+            if random.random() < mutation_rate:
+                child = swap_mutation(child) if random.random() < 0.3 else insertion_mutation(child)
             
             new_population.append(child)
         
@@ -141,7 +168,7 @@ def genetic_algorithm():
         fitness_history.append(best_fitness)
         print(f'Generation {generation}: Best Makespan = {best_fitness}')
         
-        if stagnation_counter > 50:  # Stop if no improvement for 50 generations
+        if stagnation_counter > 100:  # Stop if no improvement for 50 generations
             print("Stopping early due to stagnation.")
             break
     
