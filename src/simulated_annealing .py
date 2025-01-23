@@ -20,12 +20,18 @@ MIN_TEMPERATURE = 1
 ITERATIONS_PER_TEMPERATURE = 500
 
 # Example Job Shop Problem
+
 JOBS = [
     [(9, 66), (5, 91), (4, 87), (2, 94), (7, 21), (3, 92), (1, 7), (0, 12), (8, 11), (6, 19)],
     [(3, 13), (2, 20), (4, 7), (1, 14), (9, 66), (0, 75), (6, 77), (5, 16), (7, 95), (8, 7)],
     [(8, 77), (7, 20), (2, 34), (0, 15), (9, 88), (5, 89), (6, 53), (3, 6), (1, 45), (4, 76)],
     [(3, 27), (2, 74), (6, 88), (4, 62), (7, 52), (8, 69), (5, 9), (9, 98), (0, 52), (1, 88)],
-    [(4, 88), (6, 15), (1, 52), (2, 61), (7, 54), (0, 62), (8, 59), (5, 9), (3, 90), (9, 5)]
+    [(4, 88), (6, 15), (1, 52), (2, 61), (7, 54), (0, 62), (8, 59), (5, 9), (3, 90), (9, 5)],
+    [(6, 71), (0, 41), (4, 38), (3, 53), (7, 91), (8, 68), (1, 50), (5, 78), (2, 23), (9, 72)],
+    [(3, 95), (9, 36), (6, 66), (5, 52), (0, 45), (8, 30), (4, 23), (2, 25), (7, 17), (1, 6)],
+    [(4, 65), (1, 8), (8, 85), (0, 71), (7, 65), (6, 28), (5, 88), (3, 76), (9, 27), (2, 95)],
+    [(9, 37), (1, 37), (4, 28), (3, 51), (8, 86), (2, 9), (6, 55), (0, 73), (7, 51), (5, 90)],
+    [(3, 39), (2, 15), (6, 83), (9, 44), (7, 53), (0, 16), (4, 46), (5, 24), (1, 25), (8, 82)]
 ]
 
 NUM_JOBS = len(JOBS)
@@ -76,6 +82,7 @@ def genetic_algorithm():
     best_solution = None
     best_fitness = float('inf')
     stagnation_counter = 0
+    fitness_history = []
     
     for generation in range(GENERATIONS):
         fitness = [evaluate(chrom) for chrom in population]
@@ -107,12 +114,14 @@ def genetic_algorithm():
         else:
             stagnation_counter += 1
         
+        fitness_history.append(best_fitness)
         print(f'Generation {generation}: Best Makespan = {best_fitness}')
         
         if stagnation_counter > STAGNATION_LIMIT:
             print("Stopping early due to stagnation.")
             break
     
+    plt.plot(fitness_history, label="Genetic Algorithm")
     return best_solution, best_fitness
 
 def simulated_annealing():
@@ -120,6 +129,7 @@ def simulated_annealing():
     current_cost = evaluate(current_solution)
     best_solution, best_cost = current_solution, current_cost
     temperature = INITIAL_TEMPERATURE
+    fitness_history = []
     
     while temperature > MIN_TEMPERATURE:
         for _ in range(ITERATIONS_PER_TEMPERATURE):
@@ -132,11 +142,20 @@ def simulated_annealing():
             if current_cost < best_cost:
                 best_solution, best_cost = current_solution, current_cost
         
+        fitness_history.append(best_cost)
         temperature *= COOLING_RATE
     
+    plt.plot(fitness_history, label="Simulated Annealing")
     return best_solution, best_cost
 
 best_ga_solution, best_ga_fitness = genetic_algorithm()
 best_sa_solution, best_sa_fitness = simulated_annealing()
+
+plt.xlabel("Iterations / Generations")
+plt.ylabel("Best Makespan")
+plt.title("Comparison of Genetic Algorithm and Simulated Annealing")
+plt.legend()
+plt.show()
+
 print("Genetic Algorithm Best Makespan:", best_ga_fitness)
 print("Simulated Annealing Best Makespan:", best_sa_fitness)
